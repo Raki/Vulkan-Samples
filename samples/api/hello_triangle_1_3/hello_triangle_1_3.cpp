@@ -404,39 +404,17 @@ void HelloTriangleV13::init_device()
  */
 void HelloTriangleV13::init_vertex_buffer()
 {
-	VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
-
-	// Create the vertex buffer
-	VkBufferCreateInfo vertext_buffer_info{
-	    .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-	    .flags       = 0,
-	    .size        = buffer_size,
-	    .usage       = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-	    .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
-
-	VK_CHECK(vkCreateBuffer(context.device, &vertext_buffer_info, nullptr, &context.vertex_buffer));
-
-	// Get memory requirements
-	VkMemoryRequirements memory_requirements;
-	vkGetBufferMemoryRequirements(context.device, context.vertex_buffer, &memory_requirements);
-
-	// Allocate memory for the buffer
-	VkMemoryAllocateInfo alloc_info{
-	    .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-	    .allocationSize  = memory_requirements.size,
-	    .memoryTypeIndex = find_memory_type(context.gpu, memory_requirements.memoryTypeBits,
-	                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-
-	VK_CHECK(vkAllocateMemory(context.device, &alloc_info, nullptr, &context.vertex_buffer_memory));
-
-	// Bind the buffer with the allocated memory
-	VK_CHECK(vkBindBufferMemory(context.device, context.vertex_buffer, context.vertex_buffer_memory, 0));
-
-	// Map the memory and copy the vertex data
-	void *data;
-	VK_CHECK(vkMapMemory(context.device, context.vertex_buffer_memory, 0, buffer_size, 0, &data));
-	memcpy(data, vertices.data(), static_cast<size_t>(buffer_size));
-	vkUnmapMemory(context.device, context.vertex_buffer_memory);
+	context.projection = glm::ortho(-1280.f / 2, 1280.f / 2, -760.f / 2, 760.f / 2, 0.f, 100.f);
+	context.projection[1][1] *= -1;
+	context.tri1Mat = glm::translate(glm::mat4(1), glm::vec3(100, 100, 0));
+	context.tri2Mat = glm::translate(glm::mat4(1), glm::vec3(100, 200, 0));
+	context.vBuff = create_buffer<Vertex>(vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+	context.iBuff = create_buffer<uint32_t>(indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	std::vector<UboScene> uboArr;
+	uboArr.push_back({context.projection*context.tri1Mat});
+	uboArr.push_back({context.projection * context.tri2Mat});
+	//uboArr.push_back({glm::mat4(1)});
+	context.uBuff = create_buffer<UboScene>(uboArr, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 }
 
 /**
@@ -480,6 +458,94 @@ uint32_t HelloTriangleV13::find_memory_type(VkPhysicalDevice physical_device, ui
 	// If no suitable memory type was found, throw an exception
 	throw std::runtime_error("Failed to find suitable memory type.");
 }
+void HelloTriangleV13::setup_descriptor_pool()
+{
+	// Example uses one ubo and one image sampler
+	std::vector<VkDescriptorPoolSize> pool_sizes =
+	    {
+	        vkb::initializers::descriptor_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1)
+		};
+
+	VkDescriptorPoolCreateInfo descriptor_pool_create_info =
+	    vkb::initializers::descriptor_pool_create_info(
+	        static_cast<uint32_t>(pool_sizes.size()),
+	        pool_sizes.data(),
+	        2);
+
+	VK_CHECK(vkCreateDescriptorPool(context.device, &descriptor_pool_create_info, nullptr, &context.descriptor_pool));
+}
+void HelloTriangleV13::setup_descriptor_set_layout()
+{
+	std::vector<VkDescriptorSetLayoutBinding> set_layout_bindings =
+	    {
+	        // Binding 0 : Vertex shader uniform buffer
+	        vkb::initializers::descriptor_set_layout_binding(
+	            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+	            VK_SHADER_STAGE_VERTEX_BIT,
+	            0)
+		};
+
+	VkDescriptorSetLayoutCreateInfo descriptor_layout =
+	    vkb::initializers::descriptor_set_layout_create_info(
+	        set_layout_bindings.data(),
+	        static_cast<uint32_t>(set_layout_bindings.size()));
+
+	VK_CHECK(vkCreateDescriptorSetLayout(context.device, &descriptor_layout, nullptr, &context.descriptor_set_layout));
+
+	VkPipelineLayoutCreateInfo pipeline_layout_create_info =
+	    vkb::initializers::pipeline_layout_create_info(
+	        &context.descriptor_set_layout,
+	        1);
+
+	VK_CHECK(vkCreatePipelineLayout(context.device, &pipeline_layout_create_info, nullptr, &context.pipeline_layout));
+}
+void HelloTriangleV13::setup_descriptor_set()
+{
+	VkDescriptorSetAllocateInfo alloc_info =
+	    vkb::initializers::descriptor_set_allocate_info(
+	        context.descriptor_pool,
+	        &context.descriptor_set_layout,
+	        1);
+
+	VK_CHECK(vkAllocateDescriptorSets(context.device, &alloc_info, &context.descriptor_set));
+	VK_CHECK(vkAllocateDescriptorSets(context.device, &alloc_info, &context.descriptor_set_2));
+
+	VkDeviceSize buff1Size = sizeof(UboScene);
+
+	VkDescriptorBufferInfo buffer_descriptor1;
+	buffer_descriptor1.buffer                        = context.uBuff->buffer;
+	buffer_descriptor1.range  = buff1Size;
+	buffer_descriptor1.offset                        = 0;
+	
+	VkDescriptorBufferInfo buffer_descriptor2;
+	buffer_descriptor2.buffer = context.uBuff->buffer;
+	buffer_descriptor2.range  = buff1Size;
+	buffer_descriptor2.offset = buff1Size;
+
+	std::vector<VkWriteDescriptorSet> write_descriptor_sets =
+	    {
+	        // Binding 0 : Vertex shader uniform buffer
+	        vkb::initializers::write_descriptor_set(
+	            context.descriptor_set,
+	            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+	            0,
+	            &buffer_descriptor1)
+	    };
+
+	vkUpdateDescriptorSets(context.device, static_cast<uint32_t>(write_descriptor_sets.size()), write_descriptor_sets.data(), 0, NULL);
+
+	std::vector<VkWriteDescriptorSet> write_descriptor_sets2 =
+	    {
+	        // Binding 0 : Vertex shader uniform buffer
+	        vkb::initializers::write_descriptor_set(
+	            context.descriptor_set_2,
+	            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+	            0,
+	            &buffer_descriptor2)};
+
+	vkUpdateDescriptorSets(context.device, static_cast<uint32_t>(write_descriptor_sets2.size()), write_descriptor_sets2.data(), 0, NULL);
+}
+
 /**
  * @brief Initializes per frame data.
  * @param per_frame The data of a frame.
@@ -555,7 +621,7 @@ void HelloTriangleV13::init_swapchain()
 	VkSurfaceCapabilitiesKHR surface_properties;
 	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context.gpu, context.surface, &surface_properties));
 
-	VkSurfaceFormatKHR format = vkb::select_surface_format(context.gpu, context.surface);
+	VkSurfaceFormatKHR format = vkb::select_surface_format(context.gpu, context.surface, {VK_FORMAT_R8G8B8A8_UNORM});
 
 	VkExtent2D swapchain_size;
 	if (surface_properties.currentExtent.width == 0xFFFFFFFF)
@@ -735,8 +801,8 @@ void HelloTriangleV13::init_pipeline()
 {
 	// Create a blank pipeline layout.
 	// We are not binding any resources to the pipeline in this first sample.
-	VkPipelineLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-	VK_CHECK(vkCreatePipelineLayout(context.device, &layout_info, nullptr, &context.pipeline_layout));
+	//VkPipelineLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+	//VK_CHECK(vkCreatePipelineLayout(context.device, &layout_info, nullptr, &context.pipeline_layout));
 
 	// Define the vertex input binding description
 	VkVertexInputBindingDescription binding_description{
@@ -746,7 +812,7 @@ void HelloTriangleV13::init_pipeline()
 
 	// Define the vertex input attribute descriptions
 	std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions = {{
-	    {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(Vertex, position)},        // position
+	    {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, position)},        // position
 	    {.location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, color)}         // color
 	}};
 
@@ -944,7 +1010,7 @@ void HelloTriangleV13::render_triangle(uint32_t swapchain_index)
 	);
 	// Set clear color values.
 	VkClearValue clear_value{
-	    .color = {{0.01f, 0.01f, 0.033f, 1.0f}}};
+	    .color = {{0.1f, 0.2f, 0.3f, 1.0f}}};
 
 	// Set up the rendering attachment info
 	VkRenderingAttachmentInfo color_attachment{
@@ -1007,12 +1073,26 @@ void HelloTriangleV13::render_triangle(uint32_t swapchain_index)
 	// tells Vulkan that the input vertex data should be interpreted as a list of triangles.
 	vkCmdSetPrimitiveTopology(cmd, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, context.pipeline_layout, 0, 1, &context.descriptor_set, 0, nullptr);
 	// Bind the vertex buffer
 	VkDeviceSize offset = {0};
-	vkCmdBindVertexBuffers(cmd, 0, 1, &context.vertex_buffer, &offset);
+	vkCmdBindVertexBuffers(cmd, 0, 1, &context.vBuff->buffer, &offset);
+
+	vkCmdBindIndexBuffer(cmd, context.iBuff->buffer, 0, VK_INDEX_TYPE_UINT32);
 
 	// Draw three vertices with one instance.
-	vkCmdDraw(cmd, vertices.size(), 1, 0, 0);
+	vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+
+
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, context.pipeline_layout, 0, 1, &context.descriptor_set_2, 0, nullptr);
+	// Bind the vertex buffer
+	vkCmdBindVertexBuffers(cmd, 0, 1, &context.vBuff->buffer, &offset);
+
+	vkCmdBindIndexBuffer(cmd, context.iBuff->buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	// Draw three vertices with one instance.
+	vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+
 
 	// Complete rendering.
 	vkCmdEndRendering(cmd);
@@ -1199,6 +1279,39 @@ HelloTriangleV13::~HelloTriangleV13()
 		context.vertex_buffer_memory = VK_NULL_HANDLE;
 	}
 
+	if (context.vBuff != nullptr)
+	{
+		vkDestroyBuffer(context.device, context.vBuff->buffer, nullptr);
+		vkFreeMemory(context.device, context.vBuff->buffer_memory, nullptr);
+	}
+
+	if (context.iBuff != nullptr)
+	{
+		vkDestroyBuffer(context.device, context.iBuff->buffer, nullptr);
+		vkFreeMemory(context.device, context.iBuff->buffer_memory, nullptr);
+	}
+
+	if (context.uBuff != nullptr)
+	{
+		vkDestroyBuffer(context.device, context.uBuff->buffer, nullptr);
+		if (context.uBuff->data != nullptr)
+		{
+			vkUnmapMemory(context.device, context.uBuff->buffer_memory);
+			context.uBuff->data = nullptr;
+		}
+		vkFreeMemory(context.device, context.uBuff->buffer_memory, nullptr);
+	}
+
+	if (context.descriptor_set_layout!= VK_NULL_HANDLE)
+	{
+		vkDestroyDescriptorSetLayout(context.device, context.descriptor_set_layout, nullptr);
+	}
+
+	if (context.descriptor_pool != VK_NULL_HANDLE)
+	{
+		vkDestroyDescriptorPool(context.device, context.descriptor_pool, nullptr);
+	}
+
 	if (context.device != VK_NULL_HANDLE)
 	{
 		vkDestroyDevice(context.device, nullptr);
@@ -1235,6 +1348,12 @@ bool HelloTriangleV13::prepare(const vkb::ApplicationOptions &options)
 	init_device();
 
 	init_vertex_buffer();
+
+	setup_descriptor_pool();
+	
+	setup_descriptor_set_layout();
+
+	setup_descriptor_set();
 
 	init_swapchain();
 

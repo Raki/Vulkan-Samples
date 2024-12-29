@@ -18,8 +18,14 @@
 #pragma once
 
 #include "common/vk_common.h"
+#include "common/vk_initializers.h"
 #include "core/instance.h"
 #include "platform/application.h"
+
+namespace Utility
+{
+
+};
 
 /**
  * @brief A self-contained (minimal use of framework) sample that illustrates
@@ -30,15 +36,42 @@ class HelloTriangleV13 : public vkb::Application
 	// Define the Vertex structure
 	struct Vertex
 	{
-		glm::vec2 position;
+		glm::vec3 position;
 		glm::vec3 color;
 	};
 
+	struct InstanceData
+	{
+		glm::vec3 trans;
+		//glm::vec3 scale;
+		//float     rot;
+	};
+
+	struct UboScene
+	{
+		glm::mat4 proj;
+	};
+
 	// Define the vertex data
-	const std::vector<Vertex> vertices = {
-	    {{0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},        // Vertex 1: Red
-	    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},         // Vertex 2: Green
-	    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}         // Vertex 3: Blue
+	std::vector<Vertex> vertices = {
+	    {{50.0f, -50.f,0}, {1.0f, 0.0f, 0.0f}},        // Vertex 1: Red
+	    {{50.f, 50.f,0}, {0.0f, 1.0f, 0.0f}},         // Vertex 2: Green
+	    {{-50.f, 50.f,0}, {0.0f, 0.0f, 1.0f}},         // Vertex 3: Blue
+	    {{-50.f, -50.f, 0}, {0.0f, 0.0f, 1.0f}}          // Vertex 3: Blue
+	};
+
+	const std::vector<uint32_t> indices = {0, 1, 2,0,2,3};
+
+	struct Buffer
+	{
+		VkBuffer buffer;
+		VkDeviceMemory buffer_memory;
+		void          *data = nullptr;
+	};
+
+	struct Entity
+	{
+
 	};
 
 	/**
@@ -126,6 +159,15 @@ class HelloTriangleV13 : public vkb::Application
 
 		/// The device memory allocated for the vertex buffer.
 		VkDeviceMemory vertex_buffer_memory = VK_NULL_HANDLE;
+
+		std::shared_ptr<Buffer> vBuff = nullptr, iBuff=nullptr, uBuff=nullptr,uBuff2=nullptr;
+
+		VkDescriptorPool      descriptor_pool = VK_NULL_HANDLE;
+		VkDescriptorSet       descriptor_set  = VK_NULL_HANDLE;
+		VkDescriptorSet       descriptor_set_2 = VK_NULL_HANDLE;
+		VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
+
+		glm::mat4 projection,tri1Mat,tri2Mat;
 	};
 
   public:
@@ -171,6 +213,16 @@ class HelloTriangleV13 : public vkb::Application
 
 	uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
+	template <typename T>
+	std::shared_ptr<Buffer> create_buffer(const std::vector<T> &arr,const VkBufferUsageFlags& usage);
+
+	void setup_descriptor_pool();
+	void setup_descriptor_set_layout();
+	void setup_descriptor_set();
+
+	template <typename T>
+	void update_descriptor_set(const std::shared_ptr<Buffer> buff,const std::vector<T> &arr);
+
   private:
 	Context context;
 
@@ -178,3 +230,63 @@ class HelloTriangleV13 : public vkb::Application
 };
 
 std::unique_ptr<vkb::Application> create_hello_triangle_1_3();
+
+template <typename T>
+inline std::shared_ptr<HelloTriangleV13::Buffer> HelloTriangleV13::create_buffer(const std::vector<T> &arr, const VkBufferUsageFlags &usage)
+{
+	VkBuffer buffer;
+	VkDeviceMemory buffer_memory;
+
+	VkDeviceSize buffer_size = sizeof(arr[0]) * arr.size();
+
+	// Create the vertex buffer
+	VkBufferCreateInfo vertext_buffer_info{
+	    .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+	    .flags       = 0,
+	    .size        = buffer_size,
+	    .usage       = usage,
+	    .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+
+	VK_CHECK(vkCreateBuffer(context.device, &vertext_buffer_info, nullptr, &buffer));
+
+	// Get memory requirements
+	VkMemoryRequirements memory_requirements;
+	vkGetBufferMemoryRequirements(context.device, buffer, &memory_requirements);
+
+	// Allocate memory for the buffer
+	VkMemoryAllocateInfo alloc_info{
+	    .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+	    .allocationSize  = memory_requirements.size,
+	    .memoryTypeIndex = find_memory_type(context.gpu, memory_requirements.memoryTypeBits,
+	                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+
+	VK_CHECK(vkAllocateMemory(context.device, &alloc_info, nullptr, &buffer_memory));
+
+	// Bind the buffer with the allocated memory
+	VK_CHECK(vkBindBufferMemory(context.device, buffer, buffer_memory, 0));
+
+	// Map the memory and copy the vertex data
+	void *data;
+	VK_CHECK(vkMapMemory(context.device, buffer_memory, 0, buffer_size, 0, &data));
+	memcpy(data, arr.data(), static_cast<size_t>(buffer_size));
+
+	auto bufferObj    = std::make_shared<Buffer>();
+	bufferObj->buffer = buffer;
+	bufferObj->buffer_memory = buffer_memory;
+
+	if (usage != VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+		vkUnmapMemory(context.device, buffer_memory);
+	else
+	{
+		bufferObj->data = data;
+	}
+
+	return bufferObj;
+}
+
+template <typename T>
+inline void HelloTriangleV13::update_descriptor_set(const std::shared_ptr<Buffer> buff, const std::vector<T> &arr)
+{
+	const VkDeviceSize buffer_size = sizeof(arr[0]) * arr.size();
+	memcpy(buff->data, arr.data(), static_cast<size_t>(buffer_size));
+}
