@@ -94,7 +94,7 @@ void HPPTextureCompressionComparison::draw_gui()
 {
 	get_gui().show_options_window(
 	    [this]() {
-		    if (ImGui::Combo(
+		    /*if (ImGui::Combo(
 		            "Compressed Format",
 		            &current_gui_format,
 		            [](void *user_data, int idx) -> char const * { return reinterpret_cast<HPPTextureCompressionData *>(user_data)[idx].gui_name.c_str(); },
@@ -106,7 +106,7 @@ void HPPTextureCompressionComparison::draw_gui()
 			    {
 				    current_format = current_gui_format;
 			    }
-		    }
+		    }*/
 		    const auto &current_gui_tc = texture_compression_data[current_gui_format];
 		    if (current_gui_tc.is_supported)
 		    {
