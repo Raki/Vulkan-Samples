@@ -16,18 +16,14 @@
  * limitations under the License.
  */
 
-layout(location = 0) in vec3 in_position;
-layout(location = 1) in vec3 in_color;
+layout(location = 0) in vec3 in_color;
+layout(location = 1) in vec3 in_nrml;
 
-layout(location = 0) out vec3 out_color;
-layout(binding = 0) uniform UboSene
-{
-    mat4 projection;
-}uboScene;
+layout(location = 0) out vec4 out_color;
 
 void main()
 {
-    gl_Position = uboScene.projection * vec4(in_position, 1.0);
-
-    out_color = in_color;
+    vec3 lightDir = normalize(vec3(-1,-1,-1));
+	float diffuse = max(dot(in_nrml,lightDir),0);
+	out_color = vec4(in_color*diffuse, 1.0);
 }

@@ -406,15 +406,41 @@ void HelloTriangleV13::init_vertex_buffer()
 {
 	context.projection = glm::ortho(-1280.f / 2, 1280.f / 2, -760.f / 2, 760.f / 2, 0.f, 100.f);
 	context.projection[1][1] *= -1;
-	context.tri1Mat = glm::translate(glm::mat4(1), glm::vec3(100, 100, 0));
+	context.tri1Mat = glm::mat4(1);//glm::rotate(glm::mat4(1),glm::radians(40.0f),glm::vec3(0,1,0));
+	//glm::translate(glm::mat4(1), glm::vec3(100, 100, 0));
 	context.tri2Mat = glm::translate(glm::mat4(1), glm::vec3(100, 200, 0));
-	context.vBuff = create_buffer<Vertex>(vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-	context.iBuff = create_buffer<uint32_t>(indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	context.vBuff = create_buffer<Vertex>(cube_vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+	context.iBuff = create_buffer<uint32_t>(cube_indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 	std::vector<UboScene> uboArr;
 	uboArr.push_back({context.projection*context.tri1Mat});
 	uboArr.push_back({context.projection * context.tri2Mat});
 	//uboArr.push_back({glm::mat4(1)});
 	context.uBuff = create_buffer<UboScene>(uboArr, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+
+	std::vector<InstanceData> instArr;
+	//instArr.push_back({glm::vec3(100, 100, 0),glm::vec3(0.5,0,0)});
+	//instArr.push_back({glm::vec3(100, 200, 0), glm::vec3(0., 0.5, 0)});
+
+	for (size_t i = 0; i < 100; i++)
+	{
+		int x = rand() % 500;
+		x -= 500 / 2;
+		int y = rand() % 500;
+		y -= 500 / 2;
+		float r = rand() % 100;
+		r /= 100.0f;
+		float g = rand() % 100;
+		g /= 100.0f;
+		float b = rand() % 100;
+		b /= 100.0f;
+		instArr.push_back({
+			glm::vec3(x,y, 0), glm::vec3(r,g,b)
+		});
+	}
+
+	context.instBuff = create_buffer<InstanceData>(instArr, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+
 }
 
 /**
@@ -805,21 +831,30 @@ void HelloTriangleV13::init_pipeline()
 	//VK_CHECK(vkCreatePipelineLayout(context.device, &layout_info, nullptr, &context.pipeline_layout));
 
 	// Define the vertex input binding description
-	VkVertexInputBindingDescription binding_description{
+	VkVertexInputBindingDescription binding_description1{
 	    .binding   = 0,
 	    .stride    = sizeof(Vertex),
 	    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
 
+	VkVertexInputBindingDescription binding_description2{
+	    .binding   = 1,
+	    .stride    = sizeof(InstanceData),
+	    .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE};
+
+	std::array<VkVertexInputBindingDescription, 2> binding_descriptions = {binding_description1, binding_description2};
+
 	// Define the vertex input attribute descriptions
-	std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions = {{
+	std::array<VkVertexInputAttributeDescription, 4> attribute_descriptions = {{
 	    {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, position)},        // position
-	    {.location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, color)}         // color
+	    {.location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, normal)},           // normal
+	    {.location = 2, .binding = 1, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(InstanceData, color)},        // color
+	    {.location = 3, .binding = 1, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(InstanceData, trans)}        // color
 	}};
 
 	// Create the vertex input state
 	VkPipelineVertexInputStateCreateInfo vertex_input{.sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-	                                                  .vertexBindingDescriptionCount   = 1,
-	                                                  .pVertexBindingDescriptions      = &binding_description,
+	                                                  .vertexBindingDescriptionCount   = 2,
+	                                                  .pVertexBindingDescriptions      = binding_descriptions.data(),
 	                                                  .vertexAttributeDescriptionCount = static_cast<uint32_t>(attribute_descriptions.size()),
 	                                                  .pVertexAttributeDescriptions    = attribute_descriptions.data()};
 
@@ -880,12 +915,12 @@ void HelloTriangleV13::init_pipeline()
 	std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages = {{
 	    {.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 	     .stage  = VK_SHADER_STAGE_VERTEX_BIT,
-	     .module = load_shader_module("hello_triangle_1_3/triangle.vert", VK_SHADER_STAGE_VERTEX_BIT),
+	     .module = load_shader_module("hello_triangle_1_3/triangle-instanced.vert", VK_SHADER_STAGE_VERTEX_BIT),
 	     .pName  = "main"},        // Vertex shader stage
 	    {
 	        .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 	        .stage  = VK_SHADER_STAGE_FRAGMENT_BIT,
-	        .module = load_shader_module("hello_triangle_1_3/triangle.frag", VK_SHADER_STAGE_FRAGMENT_BIT),
+	        .module = load_shader_module("hello_triangle_1_3/triangle-instanced.frag", VK_SHADER_STAGE_FRAGMENT_BIT),
 	        .pName  = "main"}        // Fragment shader stage
 	}};
 
@@ -978,6 +1013,160 @@ VkResult HelloTriangleV13::acquire_next_swapchain_image(uint32_t *image)
 	context.per_frame[*image].swapchain_acquire_semaphore = acquire_semaphore;
 
 	return VK_SUCCESS;
+}
+
+void HelloTriangleV13::render_triangle_old(uint32_t swapchain_index)
+{
+	// Allocate or re-use a primary command buffer.
+	VkCommandBuffer cmd = context.per_frame[swapchain_index].primary_command_buffer;
+
+	// We will only submit this once before it's recycled.
+	VkCommandBufferBeginInfo begin_info{
+	    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+	    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+
+	// Begin command recording
+	VK_CHECK(vkBeginCommandBuffer(cmd, &begin_info));
+
+	// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
+	transition_image_layout(
+	    cmd,
+	    context.swapchain_images[swapchain_index],
+	    VK_IMAGE_LAYOUT_UNDEFINED,
+	    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	    0,                                                     // srcAccessMask (no need to wait for previous operations)
+	    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,                // dstAccessMask
+	    VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,                   // srcStage
+	    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT        // dstStage
+	);
+	// Set clear color values.
+	VkClearValue clear_value{
+	    .color = {{0.1f, 0.2f, 0.3f, 1.0f}}};
+
+	// Set up the rendering attachment info
+	VkRenderingAttachmentInfo color_attachment{
+	    .sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+	    .imageView   = context.swapchain_image_views[swapchain_index],
+	    .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	    .loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR,
+	    .storeOp     = VK_ATTACHMENT_STORE_OP_STORE,
+	    .clearValue  = clear_value};
+
+	// Begin rendering
+	VkRenderingInfo rendering_info{
+	    .sType                = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR,
+	    .renderArea           = {                         // Initialize the nested `VkRect2D` structure
+	                             .offset = {0, 0},        // Initialize the `VkOffset2D` inside `renderArea`
+	                             .extent = {              // Initialize the `VkExtent2D` inside `renderArea`
+	                                        .width  = context.swapchain_dimensions.width,
+	                                        .height = context.swapchain_dimensions.height}},
+	              .layerCount = 1,
+	    .colorAttachmentCount = 1,
+	    .pColorAttachments    = &color_attachment};
+
+	vkCmdBeginRendering(cmd, &rendering_info);
+
+	// Bind the graphics pipeline.
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, context.pipeline);
+
+	// Set dynamic states
+
+	// Set viewport dynamically
+	VkViewport vp{
+	    .width    = static_cast<float>(context.swapchain_dimensions.width),
+	    .height   = static_cast<float>(context.swapchain_dimensions.height),
+	    .minDepth = 0.0f,
+	    .maxDepth = 1.0f};
+
+	vkCmdSetViewport(cmd, 0, 1, &vp);
+
+	// Set scissor dynamically
+	VkRect2D scissor{
+	    .extent = {
+	        .width  = context.swapchain_dimensions.width,
+	        .height = context.swapchain_dimensions.height}};
+
+	vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+	// Since we declared VK_DYNAMIC_STATE_CULL_MODE as dynamic in the pipeline,
+	// we need to set the cull mode here. VK_CULL_MODE_NONE disables face culling,
+	// meaning both front and back faces will be rendered.
+	vkCmdSetCullMode(cmd, VK_CULL_MODE_NONE);
+
+	// Since we declared VK_DYNAMIC_STATE_FRONT_FACE as dynamic,
+	// we need to specify the winding order considered as the front face.
+	// VK_FRONT_FACE_CLOCKWISE indicates that vertices defined in clockwise order
+	// are considered front-facing.
+	vkCmdSetFrontFace(cmd, VK_FRONT_FACE_CLOCKWISE);
+
+	// Since we declared VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY as dynamic,
+	// we need to set the primitive topology here. VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+	// tells Vulkan that the input vertex data should be interpreted as a list of triangles.
+	vkCmdSetPrimitiveTopology(cmd, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, context.pipeline_layout, 0, 1, &context.descriptor_set, 0, nullptr);
+	// Bind the vertex buffer
+	VkDeviceSize offset = {0};
+	vkCmdBindVertexBuffers(cmd, 0, 1, &context.vBuff->buffer, &offset);
+
+	vkCmdBindIndexBuffer(cmd, context.iBuff->buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	// Draw three vertices with one instance.
+	vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, context.pipeline_layout, 0, 1, &context.descriptor_set_2, 0, nullptr);
+	// Bind the vertex buffer
+	vkCmdBindVertexBuffers(cmd, 0, 1, &context.vBuff->buffer, &offset);
+
+	vkCmdBindIndexBuffer(cmd, context.iBuff->buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	// Draw three vertices with one instance.
+	vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+
+	// Complete rendering.
+	vkCmdEndRendering(cmd);
+
+	// After rendering , transition the swapchain image to PRESENT_SRC
+	transition_image_layout(
+	    cmd,
+	    context.swapchain_images[swapchain_index],
+	    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+	    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,                 // srcAccessMask
+	    0,                                                      // dstAccessMask
+	    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,        // srcStage
+	    VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT                  // dstStage
+	);
+
+	// Complete the command buffer.
+	VK_CHECK(vkEndCommandBuffer(cmd));
+
+	// Submit it to the queue with a release semaphore.
+	if (context.per_frame[swapchain_index].swapchain_release_semaphore == VK_NULL_HANDLE)
+	{
+		VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+		VK_CHECK(vkCreateSemaphore(context.device, &semaphore_info, nullptr,
+		                           &context.per_frame[swapchain_index].swapchain_release_semaphore));
+	}
+
+	// Using TOP_OF_PIPE here to ensure that the command buffer does not begin executing any pipeline stages
+	// (including the layout transition) until the swapchain image is actually acquired (signaled by the semaphore).
+	// This prevents the GPU from starting operations too early and guarantees that the image is ready
+	// before any rendering commands run.
+	VkPipelineStageFlags wait_stage{VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT};
+
+	VkSubmitInfo info{
+	    .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+	    .waitSemaphoreCount   = 1,
+	    .pWaitSemaphores      = &context.per_frame[swapchain_index].swapchain_acquire_semaphore,
+	    .pWaitDstStageMask    = &wait_stage,
+	    .commandBufferCount   = 1,
+	    .pCommandBuffers      = &cmd,
+	    .signalSemaphoreCount = 1,
+	    .pSignalSemaphores    = &context.per_frame[swapchain_index].swapchain_release_semaphore};
+
+	// Submit command buffer to graphics queue
+	VK_CHECK(vkQueueSubmit(context.queue, 1, &info, context.per_frame[swapchain_index].queue_submit_fence));
 }
 
 /**
@@ -1077,21 +1266,13 @@ void HelloTriangleV13::render_triangle(uint32_t swapchain_index)
 	// Bind the vertex buffer
 	VkDeviceSize offset = {0};
 	vkCmdBindVertexBuffers(cmd, 0, 1, &context.vBuff->buffer, &offset);
+	vkCmdBindVertexBuffers(cmd, 1, 1, &context.instBuff->buffer, &offset);
 
 	vkCmdBindIndexBuffer(cmd, context.iBuff->buffer, 0, VK_INDEX_TYPE_UINT32);
 
 	// Draw three vertices with one instance.
-	vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+	vkCmdDrawIndexed(cmd, context.iBuff->count, context.instBuff->count, 0, 0, 0);
 
-
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, context.pipeline_layout, 0, 1, &context.descriptor_set_2, 0, nullptr);
-	// Bind the vertex buffer
-	vkCmdBindVertexBuffers(cmd, 0, 1, &context.vBuff->buffer, &offset);
-
-	vkCmdBindIndexBuffer(cmd, context.iBuff->buffer, 0, VK_INDEX_TYPE_UINT32);
-
-	// Draw three vertices with one instance.
-	vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
 
 
 	// Complete rendering.
@@ -1300,6 +1481,17 @@ HelloTriangleV13::~HelloTriangleV13()
 			context.uBuff->data = nullptr;
 		}
 		vkFreeMemory(context.device, context.uBuff->buffer_memory, nullptr);
+	}
+
+	if (context.instBuff != nullptr)
+	{
+		vkDestroyBuffer(context.device, context.instBuff->buffer, nullptr);
+		if (context.instBuff->data != nullptr)
+		{
+			vkUnmapMemory(context.device, context.instBuff->buffer_memory);
+			context.instBuff->data = nullptr;
+		}
+		vkFreeMemory(context.device, context.instBuff->buffer_memory, nullptr);
 	}
 
 	if (context.descriptor_set_layout!= VK_NULL_HANDLE)

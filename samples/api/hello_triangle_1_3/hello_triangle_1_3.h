@@ -37,13 +37,13 @@ class HelloTriangleV13 : public vkb::Application
 	struct Vertex
 	{
 		glm::vec3 position;
-		glm::vec3 color;
+		glm::vec3 normal;
 	};
 
 	struct InstanceData
 	{
 		glm::vec3 trans;
-		//glm::vec3 scale;
+		glm::vec3 color;
 		//float     rot;
 	};
 
@@ -54,19 +54,72 @@ class HelloTriangleV13 : public vkb::Application
 
 	// Define the vertex data
 	std::vector<Vertex> vertices = {
-	    {{50.0f, -50.f,0}, {1.0f, 0.0f, 0.0f}},        // Vertex 1: Red
-	    {{50.f, 50.f,0}, {0.0f, 1.0f, 0.0f}},         // Vertex 2: Green
+	    {{50.0f, -50.f,0}, {0.0f, 0.0f, 1.0f}},        // Vertex 1: Red
+	    {{50.f, 50.f,0}, {0.0f, 0.0f, 1.0f}},         // Vertex 2: Green
 	    {{-50.f, 50.f,0}, {0.0f, 0.0f, 1.0f}},         // Vertex 3: Blue
 	    {{-50.f, -50.f, 0}, {0.0f, 0.0f, 1.0f}}          // Vertex 3: Blue
 	};
 
 	const std::vector<uint32_t> indices = {0, 1, 2,0,2,3};
 
+	std::vector<Vertex> cube_vertices = {
+	    // Front face
+	    {{-50.0f, -50.0f, 50.0f}, {0.0f, 0.0f, 1.0f}},        // Bottom left
+	    {{50.0f, -50.0f, 50.0f}, {0.0f, 0.0f, 1.0f}},         // Bottom right
+	    {{50.0f, 50.0f, 50.0f}, {0.0f, 0.0f, 1.0f}},          // Top right
+	    {{-50.0f, 50.0f, 50.0f}, {0.0f, 0.0f, 1.0f}},         // Top left
+
+	    // Back face
+	    {{-50.0f, -50.0f, -50.0f}, {0.0f, 0.0f, -1.0f}},        // Bottom left
+	    {{50.0f, -50.0f, -50.0f}, {0.0f, 0.0f, -1.0f}},         // Bottom right
+	    {{50.0f, 50.0f, -50.0f}, {0.0f, 0.0f, -1.0f}},          // Top right
+	    {{-50.0f, 50.0f, -50.0f}, {0.0f, 0.0f, -1.0f}},         // Top left
+
+	    // Left face
+	    {{-50.0f, -50.0f, -50.0f}, {-1.0f, 0.0f, 0.0f}},        // Bottom back
+	    {{-50.0f, -50.0f, 50.0f}, {-1.0f, 0.0f, 0.0f}},         // Bottom front
+	    {{-50.0f, 50.0f, 50.0f}, {-1.0f, 0.0f, 0.0f}},          // Top front
+	    {{-50.0f, 50.0f, -50.0f}, {-1.0f, 0.0f, 0.0f}},         // Top back
+
+	    // Right face
+	    {{50.0f, -50.0f, -50.0f}, {1.0f, 0.0f, 0.0f}},        // Bottom back
+	    {{50.0f, -50.0f, 50.0f}, {1.0f, 0.0f, 0.0f}},         // Bottom front
+	    {{50.0f, 50.0f, 50.0f}, {1.0f, 0.0f, 0.0f}},          // Top front
+	    {{50.0f, 50.0f, -50.0f}, {1.0f, 0.0f, 0.0f}},         // Top back
+
+	    // Top face
+	    {{-50.0f, 50.0f, -50.0f}, {0.0f, 1.0f, 0.0f}},        // Back left
+	    {{50.0f, 50.0f, -50.0f}, {0.0f, 1.0f, 0.0f}},         // Back right
+	    {{50.0f, 50.0f, 50.0f}, {0.0f, 1.0f, 0.0f}},          // Front right
+	    {{-50.0f, 50.0f, 50.0f}, {0.0f, 1.0f, 0.0f}},         // Front left
+
+	    // Bottom face
+	    {{-50.0f, -50.0f, -50.0f}, {0.0f, -1.0f, 0.0f}},        // Back left
+	    {{50.0f, -50.0f, -50.0f}, {0.0f, -1.0f, 0.0f}},         // Back right
+	    {{50.0f, -50.0f, 50.0f}, {0.0f, -1.0f, 0.0f}},          // Front right
+	    {{-50.0f, -50.0f, 50.0f}, {0.0f, -1.0f, 0.0f}}          // Front left
+	};
+
+	std::vector<uint32_t> cube_indices = {
+	    // Front face
+	    0, 1, 2, 0, 2, 3,
+	    // Back face
+	    4, 5, 6, 4, 6, 7,
+	    // Left face
+	    8, 9, 10, 8, 10, 11,
+	    // Right face
+	    12, 13, 14, 12, 14, 15,
+	    // Top face
+	    16, 17, 18, 16, 18, 19,
+	    // Bottom face
+	    20, 21, 22, 20, 22, 23};
+
 	struct Buffer
 	{
-		VkBuffer buffer;
-		VkDeviceMemory buffer_memory;
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkDeviceMemory buffer_memory = VK_NULL_HANDLE;
 		void          *data = nullptr;
+		size_t         count = 0;
 	};
 
 	struct Entity
@@ -160,7 +213,8 @@ class HelloTriangleV13 : public vkb::Application
 		/// The device memory allocated for the vertex buffer.
 		VkDeviceMemory vertex_buffer_memory = VK_NULL_HANDLE;
 
-		std::shared_ptr<Buffer> vBuff = nullptr, iBuff=nullptr, uBuff=nullptr,uBuff2=nullptr;
+		std::shared_ptr<Buffer> vBuff = nullptr, iBuff=nullptr, uBuff=nullptr,uBuff2=nullptr,
+			instBuff=nullptr;
 
 		VkDescriptorPool      descriptor_pool = VK_NULL_HANDLE;
 		VkDescriptorSet       descriptor_set  = VK_NULL_HANDLE;
@@ -204,6 +258,8 @@ class HelloTriangleV13 : public vkb::Application
 	void init_pipeline();
 
 	VkResult acquire_next_swapchain_image(uint32_t *image);
+
+	void render_triangle_old(uint32_t swapchain_index);
 
 	void render_triangle(uint32_t swapchain_index);
 
@@ -273,6 +329,7 @@ inline std::shared_ptr<HelloTriangleV13::Buffer> HelloTriangleV13::create_buffer
 	auto bufferObj    = std::make_shared<Buffer>();
 	bufferObj->buffer = buffer;
 	bufferObj->buffer_memory = buffer_memory;
+	bufferObj->count         = arr.size();
 
 	if (usage != VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
 		vkUnmapMemory(context.device, buffer_memory);
